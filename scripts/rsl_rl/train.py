@@ -28,6 +28,7 @@ import argcomplete
 
 from isaaclab.app import AppLauncher
 
+
 # local imports
 import cli_args  # isort: skip
 
@@ -65,6 +66,7 @@ simulation_app = app_launcher.app
 
 import importlib.metadata as metadata
 import platform
+
 
 from packaging import version
 
@@ -180,6 +182,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # wrap around environment for rsl-rl
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
+    import rsl_rl
+    from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
+    import importlib.metadata
+    agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, importlib.metadata.version("rsl-rl-lib"))
     # create runner from rsl-rl
     runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     # write git state to logs

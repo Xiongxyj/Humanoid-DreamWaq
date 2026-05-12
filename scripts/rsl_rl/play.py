@@ -56,12 +56,13 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+#from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 from isaaclab_tasks.utils import get_checkpoint_path
 
 import unitree_rl_lab.tasks  # noqa: F401
 from unitree_rl_lab.utils.parser_cfg import parse_env_cfg
+import traceback
 
 
 def main():
@@ -75,17 +76,20 @@ def main():
         entry_point_key="play_env_cfg_entry_point",
     )
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
-
+    import rsl_rl
+    from isaaclab_rl.rsl_rl.utils import handle_deprecated_rsl_rl_cfg
+    import importlib.metadata
+    agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, importlib.metadata.version("rsl-rl-lib"))
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
-    if args_cli.use_pretrained_checkpoint:
+    '''if args_cli.use_pretrained_checkpoint:
         resume_path = get_published_pretrained_checkpoint("rsl_rl", args_cli.task)
         if not resume_path:
             print("[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.")
-            return
-    elif args_cli.checkpoint:
+            return'''
+    if args_cli.checkpoint:
         resume_path = retrieve_file_path(args_cli.checkpoint)
     else:
         resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
@@ -132,11 +136,15 @@ def main():
     # extract the neural network module
     # we do this in a try-except to maintain backwards compatibility.
     try:
-        # version 2.3 onwards
-        policy_nn = runner.alg.policy
+    # rsl_rl >= 4.0.0 新版 API
+        policy_nn = runner.alg.actor
     except AttributeError:
+        try:
+        # version 2.3
+            policy_nn = runner.alg.policy
+        except AttributeError:
         # version 2.2 and below
-        policy_nn = runner.alg.actor_critic
+            policy_nn = runner.alg.actor_critic
 
     # extract the normalizer
     if hasattr(policy_nn, "actor_obs_normalizer"):
@@ -148,8 +156,11 @@ def main():
 
     # export policy to onnx/jit
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    try:
+        export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    except Exception as e:
+        print(f"[WARNING] Export skipped: {e}")
 
     dt = env.unwrapped.step_dt
 
@@ -172,6 +183,56 @@ def main():
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length:
                 break
+
+        vel = env.unwrapped.scene["robot"].data.root_lin_vel_b
+        actual_speed = torch.norm(vel[:, :2], dim=1)
+        cmd = env.unwrapped.command_manager.get_command("base_velocity")
+        cmd_speed = torch.norm(cmd[:, :2], dim=1)
+        tracking_error = torch.abs(actual_speed - cmd_speed)
+
+        materials = env.unwrapped.scene["robot"].root_physx_view.get_material_properties()
+        ankle_ids, _ = env.unwrapped.scene["robot"].find_bodies(".*ankle_roll.*")
+        static_friction = materials[:, ankle_ids, 0].mean(dim=1)
+
+        terrain = env.unwrapped.scene.terrain
+        levels = terrain.terrain_levels.float()
+
+        num_envs = env.unwrapped.num_envs
+
+# 摩擦分区统计
+        ice_envs    = (static_friction < 0.4).sum().item()
+        normal_envs = ((static_friction >= 0.4) & (static_friction <= 0.8)).sum().item()
+        rough_envs  = (static_friction > 0.8).sum().item()
+
+        print("=" * 60)
+        print(f"  速度跟踪")
+        print(f"    命令速度:  {cmd_speed.mean():.3f} m/s")
+        print(f"    实际速度:  {actual_speed.mean():.3f} m/s")
+        print(f"    跟踪误差:  {tracking_error.mean():.3f} m/s  "
+            f"(最大 {tracking_error.max():.3f})")
+        print(f"cmd shape: {cmd.shape}, cmd[0]: {cmd[0]}")  # 看第一个env的原始值
+
+        print(f"  地形难度")
+        print(f"    平均等级:  {levels.mean():.2f} / {terrain.cfg.terrain_generator.num_rows - 1}")
+        print(f"    最高等级:  {levels.max().item():.0f}  "
+            f"最低等级: {levels.min().item():.0f}")
+
+        print(f"  地面摩擦 (脚踝)")
+        print(f"    范围:      [{static_friction.min():.3f}, {static_friction.max():.3f}]")
+        print(f"    冰面(<0.4): {ice_envs:3d} envs | "
+            f"正常: {normal_envs:3d} envs | "
+            f"粗糙(>0.8): {rough_envs:3d} envs")
+
+        print(f"  单环境详情 (前5个)")
+        for i in range(min(5, num_envs)):
+            mu  = static_friction[i].item()
+            lvl = int(levels[i].item())
+            spd = actual_speed[i].item()
+            err = tracking_error[i].item()
+            surface = "冰面" if mu < 0.4 else ("粗糙" if mu > 0.8 else "正常")
+            print(f"    env{i}: 摩擦={mu:.3f}({surface})  "
+                f"难度={lvl}  速度={spd:.3f}m/s  误差={err:.3f}")
+        print("=" * 60)
 
         # time delay for real-time evaluation
         sleep_time = dt - (time.time() - start_time)

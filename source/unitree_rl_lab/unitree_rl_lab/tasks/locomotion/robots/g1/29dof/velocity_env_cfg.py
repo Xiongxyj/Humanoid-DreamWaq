@@ -24,15 +24,50 @@ from unitree_rl_lab.tasks.locomotion import mdp
 COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
-    num_rows=9,
-    num_cols=21,
-    horizontal_scale=0.1,
+    num_rows=9, #行数代表难度等级
+    num_cols=21, #列数代表同难度地形的数量
+    horizontal_scale=0.1, #xy网格分辨率 
     vertical_scale=0.005,
-    slope_threshold=0.75,
+    slope_threshold=0.75, #坡度阈值 超过此值设置为垂直
     difficulty_range=(0.0, 1.0),
+    color_scheme="height",
     use_cache=False,
     sub_terrains={
-        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.5),
+        "flat": terrain_gen.MeshPlaneTerrainCfg(
+            proportion=0.15,  
+        ),
+        "wave": terrain_gen.HfWaveTerrainCfg(
+            proportion = 0.15,
+            amplitude_range = [0.05,0.3],
+            num_waves = 2,
+        ),
+        "stairs_up": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion = 0.2,
+            step_height_range = [0.05,0.2],
+            step_width = 0.3,
+            platform_width = 3.0,
+            border_width = 0.5,
+        ),
+        "stairs_down": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion = 0.2,
+            step_height_range = [0.05,0.2],
+            step_width = 0.3,
+            platform_width = 3.0,
+            border_width = 0.5,
+        ),
+        "rough": terrain_gen.HfRandomUniformTerrainCfg(
+            proportion=0.15,
+            noise_range=(0.02, 0.10),
+            noise_step=0.02,
+            border_width=0.25,
+        ),
+        "stepping_stone": terrain_gen.HfSteppingStonesTerrainCfg(
+            proportion = 0.15,
+            stone_max_height = 0.3,
+            stone_width_range = [0.3,1.0],
+            stone_distance_range = [0.05,0.2],
+            platform_width = 2.0,
+        )
     },
 )
 
@@ -47,18 +82,20 @@ class RobotSceneCfg(InteractiveSceneCfg):
         terrain_type="generator",  # "plane", "generator"
         terrain_generator=COBBLESTONE_ROAD_CFG,  # None, ROUGH_TERRAINS_CFG
         max_init_terrain_level=COBBLESTONE_ROAD_CFG.num_rows - 1,
-        collision_group=-1,
+        collision_group=-1, #与所有的物体碰撞 像地面这种肯定设置为-1 但是比如机器人内部 可以设置为同一个碰撞组（例如1,然后避免内部碰撞）
         physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="multiply",
+            friction_combine_mode="multiply", #将不同的摩擦系数相乘
             restitution_combine_mode="multiply",
             static_friction=1.0,
-            dynamic_friction=1.0,
-        ),
-        visual_material=sim_utils.MdlFileCfg(
-            mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
-            project_uvw=True,
-            texture_scale=(0.25, 0.25),
-        ),
+            dynamic_friction=1.0, 
+        ), #地形的物理特性 物理材质
+        
+        #visual_material=sim_utils.MdlFileCfg(
+            #mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
+            #project_uvw=True,
+            #texture_scale=(0.25, 0.25),
+        #), #地形的视觉素材 其实是地形的材质 
+        
         debug_vis=False,
     )
     # robots
@@ -66,13 +103,23 @@ class RobotSceneCfg(InteractiveSceneCfg):
 
     # sensors
     height_scanner = RayCasterCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/torso_link",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
-        ray_alignment="yaw",
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
-        debug_vis=False,
-        mesh_prim_paths=["/World/ground"],
+        prim_path="{ENV_REGEX_NS}/Robot/torso_link",#制定挂载在哪个位置
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),#离挂载位置的偏移
+        ray_alignment="yaw",#只随着水平转动而转动，不绕x/y轴转动
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]), #挂载范围为1.6*1.0的长方形，每个传感器距离为0.1m。
+        debug_vis=False, #是否可视化
+        mesh_prim_paths=["/World/ground"], #只与地面发生相交，不会射到机器人身上而返回。
+        update_period = 0.02,
     )
+
+    Force_detect = ContactSensorCfg(
+        max_contact_data_count_per_prim = 2,
+        prim_path="{ENV_REGEX_NS}/Robot/.*_ankle_roll_link",
+        history_length=3,
+        debug_vis=False,
+        filter_prim_paths_expr = ["/World/ground"],
+    )
+
     contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
     # lights
     sky_light = AssetBaseCfg(
@@ -100,7 +147,7 @@ class EventCfg:
             "num_buckets": 64,
         },
     )
-
+    #随机增减负重
     add_base_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
@@ -113,12 +160,12 @@ class EventCfg:
 
     # reset
     base_external_force_torque = EventTerm(
-        func=mdp.apply_external_force_torque,
+        func=mdp.apply_external_force_torque, #torque指扭矩
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
-            "force_range": (0.0, 0.0),
-            "torque_range": (-0.0, 0.0),
+            "force_range": (-50.0, 50.0),
+            "torque_range": (-5.0, 5.0),
         },
     )
 
@@ -146,7 +193,21 @@ class EventCfg:
             "velocity_range": (-1.0, 1.0),
         },
     )
-
+    #重置脚底摩擦力
+    randomize_foot_material = EventTerm(
+    func=mdp.randomize_rigid_body_material,
+    mode="reset",
+    params={
+        "asset_cfg": SceneEntityCfg(
+            "robot",
+            body_names=".*ankle_roll.*"  # 左右脚踝
+        ),
+        "static_friction_range": (0.3, 1.5),   # 静摩擦系数范围
+        "dynamic_friction_range": (0.3, 1.5),  # 动摩擦系数范围
+        "restitution_range": (0.0, 0.1),        # 弹性系数范围
+        "num_buckets": 64,                      # 材质分桶数量
+    },
+)
     # interval
     push_robot = EventTerm(
         func=mdp.push_by_setting_velocity,
@@ -154,6 +215,9 @@ class EventCfg:
         interval_range_s=(5.0, 5.0),
         params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
     )
+
+
+    
 
 
 @configclass
@@ -189,6 +253,7 @@ class ActionsCfg:
 class ObservationsCfg:
     """Observation specifications for the MDP."""
 
+    '''actor就是policy'''
     @configclass
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
@@ -201,6 +266,12 @@ class ObservationsCfg:
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05, noise=Unoise(n_min=-1.5, n_max=1.5))
         last_action = ObsTerm(func=mdp.last_action)
         # gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
+        height_scanner = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            noise = Unoise(n_min=-0.1,n_max=0.1),
+            clip=(-1.0, 1.5),
+        )
 
         def __post_init__(self):
             self.history_length = 5
@@ -222,10 +293,12 @@ class ObservationsCfg:
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05)
         last_action = ObsTerm(func=mdp.last_action)
         # gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
-        # height_scanner = ObsTerm(func=mdp.height_scan,
-        #     params={"sensor_cfg": SceneEntityCfg("height_scanner")},
-        #     clip=(-1.0, 5.0),
-        # )
+        height_scanner = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            noise = Unoise(n_min=-0.1,n_max=0.1),
+            clip=(-1.0, 1.5),
+        )
 
         def __post_init__(self):
             self.history_length = 5
@@ -236,106 +309,164 @@ class ObservationsCfg:
 
 @configclass
 class RewardsCfg:
-    """Reward terms for the MDP."""
 
-    # -- task
+    # ── 主任务奖励 ────────────────────────────────────────────
     track_lin_vel_xy = RewTerm(
+        # 奖励 xy 水平速度跟踪，目的是让机器人按命令速度行走
         func=mdp.track_lin_vel_xy_yaw_frame_exp,
         weight=1.0,
         params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
     track_ang_vel_z = RewTerm(
-        func=mdp.track_ang_vel_z_exp, weight=0.5, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
-    )
-
-    alive = RewTerm(func=mdp.is_alive, weight=0.15)
-
-    # -- base
-    base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
-    base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
-    joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.001)
-    joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
-    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-5.0)
-    energy = RewTerm(func=mdp.energy, weight=-2e-5)
-
-    joint_deviation_arms = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-0.1,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    ".*_shoulder_.*_joint",
-                    ".*_elbow_joint",
-                    ".*_wrist_.*",
-                ],
-            )
-        },
-    )
-    joint_deviation_waists = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-1,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    "waist.*",
-                ],
-            )
-        },
-    )
-    joint_deviation_legs = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint", ".*_hip_yaw_joint"])},
-    )
-
-    # -- robot
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-5.0)
-    base_height = RewTerm(func=mdp.base_height_l2, weight=-10, params={"target_height": 0.78})
-
-    # -- feet
-    gait = RewTerm(
-        func=mdp.feet_gait,
+        # 奖励 z 轴角速度跟踪，目的是让机器人按命令转向
+        func=mdp.track_ang_vel_z_exp,
         weight=0.5,
-        params={
-            "period": 0.8,
-            "offset": [0.0, 0.5],
-            "threshold": 0.55,
-            "command_name": "base_velocity",
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
-        },
+        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
-    feet_slide = RewTerm(
-        func=mdp.feet_slide,
-        weight=-0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
-        },
+    alive = RewTerm(
+        # 奖励存活每一步，目的是避免策略主动摔倒换取局部最优
+        func=mdp.is_alive,
+        weight=0.15,
     )
-    feet_clearance = RewTerm(
-        func=mdp.foot_clearance_reward,
+
+    # ── 躯干稳定性惩罚 ────────────────────────────────────────
+    base_linear_velocity = RewTerm(
+        # 惩罚 z 轴线速度（上下弹跳），目的是保证重心平稳不抖动
+        func=mdp.lin_vel_z_l2,
+        weight=-2.0,
+    )
+    
+    base_angular_velocity = RewTerm(
+        # 惩罚 xy 轴角速度（前后左右摇晃），目的是保证躯干稳定直立
+        func=mdp.ang_vel_xy_l2,
+        weight=-0.05,
+    )
+
+    flat_orientation_l2 = RewTerm(
+        # 惩罚躯干倾斜偏离水平，目的是强制保持直立姿态
+        func=mdp.flat_orientation_l2,
+        weight=-0.5,
+    )
+    
+    # ── 关节行为惩罚 ──────────────────────────────────────────
+    joint_vel = RewTerm(
+        # 惩罚过大的关节速度，目的是避免高速运动损伤关节
+        func=mdp.joint_vel_l2,
+        weight=-0.001,
+    )
+    joint_acc = RewTerm(
+        # 惩罚关节加速度突变，目的是保证动作平滑不抖动
+        func=mdp.joint_acc_l2,
+        weight=-2.5e-7,
+    )
+    action_rate = RewTerm(
+        # 惩罚相邻两步动作变化过快，目的是输出平滑连续的控制指令
+        func=mdp.action_rate_l2,
+        weight=-0.05,
+    )
+    dof_pos_limits = RewTerm(
+        # 惩罚关节位置超出限位，目的是防止硬件损坏
+        func=mdp.joint_pos_limits,
+        weight=-5.0,
+    )
+    energy = RewTerm(
+        # 惩罚能量消耗（力矩×速度），目的是鼓励节能高效的步态
+        func=mdp.energy,
+        weight=-2e-5,
+    )
+    stand_still = RewTerm(
+        #速度要求很小时保持静止 惩罚运动
+        func=mdp.stand_still,
+        weight=-1.0,
+    )
+    feet_contact_without_cmd = RewTerm(
+        #速度要求很小时 奖励双脚静止接触
+        func=mdp.feet_contact_without_cmd,
         weight=1.0,
         params={
-            "std": 0.05,
+            "sensor_cfg" : SceneEntityCfg(
+                "contact_forces", 
+                body_names=".*ankle_roll.*",
+            )
+        }
+    )
+
+    # ── 关节偏差惩罚 ──────────────────────────────────────────
+    joint_deviation_arms = RewTerm(
+        # 惩罚手臂关节偏离默认位置，目的是行走时手臂保持自然收拢姿态
+        func=mdp.joint_deviation_l1,
+        weight=-0.1,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[
+            ".*_shoulder_.*_joint", ".*_elbow_joint", ".*_wrist_.*"])},
+    )
+    joint_deviation_waists = RewTerm(
+        # 惩罚腰部关节偏离默认位置，目的是避免不必要的腰部扭转
+        func=mdp.joint_deviation_l1,
+        weight=-1.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["waist.*"])},
+    )
+    joint_deviation_legs = RewTerm(
+        # 惩罚髋关节侧摆和偏转偏离默认值，目的是保证双腿朝前行走不外八
+        func=mdp.joint_deviation_l1,
+        weight=-1.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[
+            ".*_hip_roll_joint", ".*_hip_yaw_joint"])},
+    )
+
+    # ── 步态与足端奖惩 ────────────────────────────────────────
+    '''在复杂地形 左右脚相位差似乎不需要要求很严格 比如垫脚石 可能需要大步子 因此减少weight作软性约束'''
+    gait = RewTerm(
+        # 奖励符合预设节律的交替步态（周期0.8s，左右脚相位差0.5），目的是诱导出自然双足步态
+        func=mdp.feet_gait,
+        weight=0.2,
+        params={"period": 0.8, "offset": [0.0, 0.5], "threshold": 0.55,
+                "command_name": "base_velocity",
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*")},
+    )
+    feet_slide = RewTerm(
+        # 惩罚脚与地面之间的滑动，目的是防止打滑和不稳定的支撑相
+        func=mdp.feet_slide,
+        weight=-0.2,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*")},
+    )
+    feet_height = RewTerm(
+        # 惩罚上下台阶时脚高度与目标/台阶高度的差距。
+        func=mdp.feet_height_body,
+        weight=-1.0,
+        params={"command_name": "base_velocity", 
             "tanh_mult": 2.0,
-            "target_height": 0.1,
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-        },
+            "target_height": -0.53,
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*")},
     )
 
-    # -- other
-    undesired_contacts = RewTerm(
-        func=mdp.undesired_contacts,
-        weight=-1,
+    feet_too_near = RewTerm(
+        #惩罚太近的双脚距离1
+        func=mdp.feet_too_near,
+        weight=-1.0,
         params={
-            "threshold": 1,
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*).*"]),
-        },
+            "threshold":0.2,
+        }
     )
 
+    # ── 接触安全 ──────────────────────────────────────────────
+    '''我认为上台阶时 膝盖也不应撞地 故应该可以不删'''
+    undesired_contacts = RewTerm(
+        # 惩罚非踝关节部位与地面接触，目的是防止膝盖、躯干等部位撞地
+        func=mdp.undesired_contacts,
+        weight=-1.0,
+        params={"threshold": 1,
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*).*"])},
+    )
+    
+    hit_stairs = RewTerm(
+        #惩罚脚与垂直面的相撞
+        func=mdp.feet_stumble,
+        weight=-2.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("Force_detect",body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        },
+    )
 
 @configclass
 class TerminationsCfg:
@@ -384,6 +515,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
         # update sensor update periods
         # we tick all the sensors based on the smallest update period (physics update period)
         self.scene.contact_forces.update_period = self.sim.dt
+        self.scene.force_detect.update_period = self.sim.dt
         self.scene.height_scanner.update_period = self.decimation * self.sim.dt
 
         # check if terrain levels curriculum is enabled - if so, enable curriculum for terrain generator
@@ -401,6 +533,13 @@ class RobotPlayEnvCfg(RobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 32
-        self.scene.terrain.terrain_generator.num_rows = 2
+        self.scene.terrain.terrain_generator.num_rows = 9
         self.scene.terrain.terrain_generator.num_cols = 10
+        self.scene.terrain.max_init_terrain_level = 8 # ← 补上这行，num_rows-1
         self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges
+        self.curriculum = None  
+        self.commands.base_velocity.ranges = mdp.UniformLevelVelocityCommandCfg.Ranges(
+        lin_vel_x=(0.5, 1.0),    # play 时只测高速前进
+        lin_vel_y=(-0.2, 0.2),
+        ang_vel_z=(-0.2, 0.2),
+        )
