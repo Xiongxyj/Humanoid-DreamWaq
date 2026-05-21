@@ -198,8 +198,12 @@ def main():
         levels = terrain.terrain_levels.float()
 
         num_envs = env.unwrapped.num_envs
+        sensor = env.unwrapped.scene.sensors["height_scanner"]
+        # 打印前几条射线的xy坐标，确认排列顺序
+        print(sensor.data.ray_hits_w[0, :5, :2])   # 前5条
+        print(sensor.data.ray_hits_w[0, 8:13, :2]) # 中间附近5条
 
-# 摩擦分区统计
+        # 摩擦分区统计
         ice_envs    = (static_friction < 0.4).sum().item()
         normal_envs = ((static_friction >= 0.4) & (static_friction <= 0.8)).sum().item()
         rough_envs  = (static_friction > 0.8).sum().item()

@@ -21,7 +21,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_29DOF_CFG as ROBOT_CFG
 from unitree_rl_lab.tasks.locomotion import mdp
 
-COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
+'''COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
     num_rows=9, #行数代表难度等级
@@ -63,11 +63,131 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
         ),
         "stepping_stone": terrain_gen.HfSteppingStonesTerrainCfg(
             proportion = 0.15,
-            stone_max_height = 0.3,
+            stone_height_max = 0.3,
             stone_width_range = [0.3,1.0],
             stone_distance_range = [0.05,0.2],
             platform_width = 2.0,
         )
+    },
+)'''
+
+# --Phase A: 学会走路 
+WALKING_EASY_CFG = terrain_gen.TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=5,           # 只需5个难度等级
+    num_cols=21,
+    horizontal_scale=0.1,
+    vertical_scale=0.005,
+    slope_threshold=0.75,
+    difficulty_range=(0.0, 0.5),  # 只用前半段难度
+    use_cache=False,
+    sub_terrains={
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.7),
+        "wave": terrain_gen.HfWaveTerrainCfg(
+            proportion=0.3, amplitude_range=[0.05, 0.2], num_waves=3, border_width=0.5
+        ),
+    },
+)
+
+
+
+
+# ── Phase B：只学单层台阶（fine-tune from 平地/波浪 checkpoint）──────────
+STAIR_EASY_CFG = terrain_gen.TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=5,           # 只需5个难度等级
+    num_cols=21,
+    horizontal_scale=0.1,
+    vertical_scale=0.005,
+    slope_threshold=0.75,
+    difficulty_range=(0.0, 0.5),  # 只用前半段难度
+    use_cache=False,
+    sub_terrains={
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.5),
+        "stairs_up": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion=0.25,
+            step_height_range=[0.05, 0.12],  # 先只练 5-12cm
+            step_width=0.45,                  # 宽台阶，容错大
+            platform_width=3.0,
+            border_width=0.5,
+        ),
+        "stairs_down": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion=0.25,
+            step_height_range=[0.05, 0.12],
+            step_width=0.45,
+            platform_width=3.0,
+            border_width=0.5,
+        ),
+    },
+)
+
+# ── Phase C：中等台阶 + 波浪（fine-tune from Phase B checkpoint）─────────
+STAIR_MED_CFG = terrain_gen.TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=7,
+    num_cols=21,
+    difficulty_range=(0.0, 0.8),
+    use_cache=False,
+    sub_terrains={
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.30),
+        "wave": terrain_gen.HfWaveTerrainCfg(
+            proportion=0.20, amplitude_range=[0.05, 0.2], num_waves=3, border_width=0.5
+        ),
+        "stairs_up": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion=0.25,
+            step_height_range=[0.05, 0.12],
+            step_width=0.45,
+            platform_width=3.0,
+            border_width=0.5,
+        ),
+        "stairs_down": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion=0.25,
+            step_height_range=[0.05, 0.12],
+            step_width=0.45,
+            platform_width=3.0,
+            border_width=0.5,
+        ),
+    },
+)
+
+COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=9, #行数代表难度等级
+    num_cols=21, #列数代表同难度地形的数量
+    horizontal_scale=0.1, #xy网格分辨率 
+    vertical_scale=0.005,
+    slope_threshold=0.75, #坡度阈值 超过此值设置为垂直
+    difficulty_range=(0.0, 1.0),
+    color_scheme="height",
+    use_cache=False,
+    sub_terrains={
+        "flat": terrain_gen.MeshPlaneTerrainCfg(
+            proportion=0.3,  
+        ),
+        "wave": terrain_gen.HfWaveTerrainCfg(
+            proportion = 0.3,
+            amplitude_range = [0.05,0.3],
+            num_waves = 3,
+            border_width=0.5,
+        ),
+        "stairs_up": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion = 0.15,
+            step_height_range = [0.05,0.2],
+            step_width = 0.3,
+            platform_width = 1.0,
+            border_width = 0.5,
+        ),
+        "stairs_down": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+            proportion = 0.15,
+            step_height_range = [0.05,0.2],
+            step_width = 0.3,
+            platform_width = 1.0,
+            border_width = 0.5,
+        ),
     },
 )
 
@@ -80,8 +200,9 @@ class RobotSceneCfg(InteractiveSceneCfg):
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",  # "plane", "generator"
-        terrain_generator=COBBLESTONE_ROAD_CFG,  # None, ROUGH_TERRAINS_CFG
-        max_init_terrain_level=COBBLESTONE_ROAD_CFG.num_rows - 1,
+        terrain_generator=WALKING_EASY_CFG,  
+        max_init_terrain_level=WALKING_EASY_CFG.num_rows - 1,
+
         collision_group=-1, #与所有的物体碰撞 像地面这种肯定设置为-1 但是比如机器人内部 可以设置为同一个碰撞组（例如1,然后避免内部碰撞）
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply", #将不同的摩擦系数相乘
@@ -90,11 +211,11 @@ class RobotSceneCfg(InteractiveSceneCfg):
             dynamic_friction=1.0, 
         ), #地形的物理特性 物理材质
         
-        #visual_material=sim_utils.MdlFileCfg(
-            #mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
-            #project_uvw=True,
-            #texture_scale=(0.25, 0.25),
-        #), #地形的视觉素材 其实是地形的材质 
+        visual_material=sim_utils.MdlFileCfg(
+            mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
+            project_uvw=True,
+            texture_scale=(0.25, 0.25),
+        ), #地形的视觉素材 其实是地形的材质 
         
         debug_vis=False,
     )
@@ -104,15 +225,15 @@ class RobotSceneCfg(InteractiveSceneCfg):
     # sensors
     height_scanner = RayCasterCfg(
         prim_path="{ENV_REGEX_NS}/Robot/torso_link",#制定挂载在哪个位置
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),#离挂载位置的偏移
+        offset=RayCasterCfg.OffsetCfg(pos=(0.40, 0.0, 20.0)),#离挂载位置的偏移
         ray_alignment="yaw",#只随着水平转动而转动，不绕x/y轴转动
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]), #挂载范围为1.6*1.0的长方形，每个传感器距离为0.1m。
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.8, 0.5]), 
         debug_vis=False, #是否可视化
         mesh_prim_paths=["/World/ground"], #只与地面发生相交，不会射到机器人身上而返回。
         update_period = 0.02,
     )
 
-    Force_detect = ContactSensorCfg(
+    force_detect = ContactSensorCfg(
         max_contact_data_count_per_prim = 2,
         prim_path="{ENV_REGEX_NS}/Robot/.*_ankle_roll_link",
         history_length=3,
@@ -164,8 +285,8 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
-            "force_range": (-50.0, 50.0),
-            "torque_range": (-5.0, 5.0),
+            "force_range": (0, 0),
+            "torque_range": (0, 0),
         },
     )
 
@@ -173,7 +294,7 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
+            "pose_range": {"x": (-1.5, 1.5), "y": (-1.5, 1.5), "yaw": (-3.14, 3.14)},
             "velocity_range": {
                 "x": (0.0, 0.0),
                 "y": (0.0, 0.0),
@@ -232,7 +353,7 @@ class CommandsCfg:
         heading_command=False,
         debug_vis=True,
         ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-0.1, 0.1)
+            lin_vel_x=(-0.3, 0.3), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-0.1, 0.1)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
             lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.2, 0.2)
@@ -259,19 +380,13 @@ class ObservationsCfg:
         """Observations for policy group."""
 
         # observation terms (order preserved)
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2, noise=Unoise(n_min=-0.2, n_max=0.2))
-        projected_gravity = ObsTerm(func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05))
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2, noise=Unoise(n_min=-0.2, n_max=0.2),clip=(-5.0, 5.0),  )
+        projected_gravity = ObsTerm(func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05),clip=(-1.05, 1.05), )
         velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"})
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05, noise=Unoise(n_min=-1.5, n_max=1.5))
+        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01),clip=(-3.15, 3.15),)
+        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, scale=0.05, noise=Unoise(n_min=-1.5, n_max=1.5),clip=(-5.0, 5.0), )
         last_action = ObsTerm(func=mdp.last_action)
         # gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
-        height_scanner = ObsTerm(
-            func=mdp.height_scan,
-            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
-            noise = Unoise(n_min=-0.1,n_max=0.1),
-            clip=(-1.0, 1.5),
-        )
 
         def __post_init__(self):
             self.history_length = 5
@@ -294,14 +409,14 @@ class ObservationsCfg:
         last_action = ObsTerm(func=mdp.last_action)
         # gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": 0.8})
         height_scanner = ObsTerm(
-            func=mdp.height_scan,
+            func=mdp.height_scan_safe,
             params={"sensor_cfg": SceneEntityCfg("height_scanner")},
-            noise = Unoise(n_min=-0.1,n_max=0.1),
+            noise = Unoise(n_min=-0.05,n_max=0.05),
             clip=(-1.0, 1.5),
         )
 
         def __post_init__(self):
-            self.history_length = 5
+            self.history_length = 1
 
     # privileged observations
     critic: CriticCfg = CriticCfg()
@@ -314,7 +429,7 @@ class RewardsCfg:
     track_lin_vel_xy = RewTerm(
         # 奖励 xy 水平速度跟踪，目的是让机器人按命令速度行走
         func=mdp.track_lin_vel_xy_yaw_frame_exp,
-        weight=1.0,
+        weight=1.5,
         params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
     track_ang_vel_z = RewTerm(
@@ -345,7 +460,18 @@ class RewardsCfg:
     flat_orientation_l2 = RewTerm(
         # 惩罚躯干倾斜偏离水平，目的是强制保持直立姿态
         func=mdp.flat_orientation_l2,
-        weight=-0.5,
+        weight=-3.0,
+    )
+
+    base_height = RewTerm(
+    func=mdp.base_height_above_terrain,
+    weight=-6.0,
+    params={
+        "target_height": 0.78,
+        "asset_cfg": SceneEntityCfg("robot"),
+        "feet_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+        "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+        },
     )
     
     # ── 关节行为惩罚 ──────────────────────────────────────────
@@ -374,7 +500,7 @@ class RewardsCfg:
         func=mdp.energy,
         weight=-2e-5,
     )
-    stand_still = RewTerm(
+    '''stand_still = RewTerm(
         #速度要求很小时保持静止 惩罚运动
         func=mdp.stand_still,
         weight=-1.0,
@@ -389,7 +515,7 @@ class RewardsCfg:
                 body_names=".*ankle_roll.*",
             )
         }
-    )
+    )'''
 
     # ── 关节偏差惩罚 ──────────────────────────────────────────
     joint_deviation_arms = RewTerm(
@@ -418,7 +544,7 @@ class RewardsCfg:
     gait = RewTerm(
         # 奖励符合预设节律的交替步态（周期0.8s，左右脚相位差0.5），目的是诱导出自然双足步态
         func=mdp.feet_gait,
-        weight=0.2,
+        weight=0.5, #0.3
         params={"period": 0.8, "offset": [0.0, 0.5], "threshold": 0.55,
                 "command_name": "base_velocity",
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*")},
@@ -430,15 +556,44 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*")},
     )
-    feet_height = RewTerm(
-        # 惩罚上下台阶时脚高度与目标/台阶高度的差距。
-        func=mdp.feet_height_body,
-        weight=-1.0,
-        params={"command_name": "base_velocity", 
+
+    feet_clearance = RewTerm(
+        func=mdp.foot_clearance_reward,
+        weight=1.0,
+        params={
+            "std": 0.05,
             "tanh_mult": 2.0,
-            "target_height": -0.53,
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*")},
+            "target_height": 0.1,
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+        },
     )
+    '''
+    foot_clearance_stance_based = RewTerm(
+        # 基于支撑脚前方的真实台阶高度，动态引导摆动脚的抬脚高度
+        func=mdp.foot_target_height_from_stance,
+        weight=0.5,  # 注意：我们在函数末尾 return 了负值，所以这里权重设为正数 1.0 即可维持其惩罚性质
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"), 
+            "sensor_cfg": SceneEntityCfg("height_scanner"),
+            "contact_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            "target_clearance": 0.12,      # 期望摆动脚比前方台阶（或平地）高出 12cm 的安全距离
+            "stair_height_thresh": 0.04,   # 过滤平地噪点：相对高度差大于 4cm 才被锁定为台阶目标
+            "command_name": "base_velocity",
+        },
+    )
+
+    foot_on_flat = RewTerm(
+        # 精确奖励支撑脚踩在局部平整面上，惩罚踩在台阶边缘（防打滑/踩空）
+        func=mdp.foot_on_flat_terrain,
+        weight=0.5, 
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            "scanner_cfg": SceneEntityCfg("height_scanner"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+            "radius": 0.10,          # 局部感受野：仅考察脚掌周围 8cm 半径内的射线
+            "variance_scale": 400.0  # 指数敏感度：方差稍微增大（踩到边缘）奖励就会迅速衰减
+        },
+    )'''
 
     feet_too_near = RewTerm(
         #惩罚太近的双脚距离1
@@ -454,7 +609,7 @@ class RewardsCfg:
     undesired_contacts = RewTerm(
         # 惩罚非踝关节部位与地面接触，目的是防止膝盖、躯干等部位撞地
         func=mdp.undesired_contacts,
-        weight=-1.0,
+        weight=-0.5,
         params={"threshold": 1,
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*).*"])},
     )
@@ -462,9 +617,9 @@ class RewardsCfg:
     hit_stairs = RewTerm(
         #惩罚脚与垂直面的相撞
         func=mdp.feet_stumble,
-        weight=-2.0,
+        weight=-0.3,
         params={
-            "sensor_cfg": SceneEntityCfg("Force_detect",body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
+            "sensor_cfg": SceneEntityCfg("force_detect",body_names=["left_ankle_roll_link", "right_ankle_roll_link"]),
         },
     )
 
@@ -490,7 +645,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the locomotion velocity-tracking environment."""
 
     # Scene settings
-    scene: RobotSceneCfg = RobotSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: RobotSceneCfg = RobotSceneCfg(num_envs=1024, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
