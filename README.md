@@ -1,150 +1,101 @@
-# Unitree RL Lab
+# Humanoid-DreamWaq
 
-[![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-silver.svg)](https://docs.omniverse.nvidia.com/isaacsim/latest/overview.html)
-[![Isaac Lab](https://img.shields.io/badge/IsaacLab-2.3.0-silver)](https://isaac-sim.github.io/IsaacLab)
-[![License](https://img.shields.io/badge/license-Apache2.0-yellow.svg)](https://opensource.org/license/apache-2-0)
-[![Discord](https://img.shields.io/badge/-Discord-5865F2?style=flat&logo=Discord&logoColor=white)](https://discord.gg/ZwcVwxv5rq)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
+**Blind locomotion on rough ground, waves, and stairs with a Unitree G1.**
 
-## Overview
+This project adapts DreamWaQ's context estimator (CENet) and asymmetric actor–critic to the G1 29-DoF humanoid in Isaac Lab. It began with a height-scan-based PPO policy using Unitree RL Lab. To reduce dependence on potentially noisy or occluded external perception during sim-to-real transfer, the actor's height scan was removed and replaced with a learned context estimator driven by proprioceptive history.
 
-This project provides a set of reinforcement learning environments for Unitree robots, built on top of [IsaacLab](https://github.com/isaac-sim/IsaacLab).
+## Simulation demos
 
-Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
+The GIFs are excerpts from a checkpoint playback recorded on June 3, 2026. The training terrain also includes flat ground.
 
-<div align="center">
+| Rough ground | Waves |
+| :---: | :---: |
+| ![G1 walking on rough ground](docs/media/rough.gif) | ![G1 walking on waves](docs/media/wave.gif) |
+| **Stair ascent** | **Stair descent** |
+| ![G1 ascending stairs with a step-to gait](docs/media/stairs-up.gif) | ![G1 descending stairs](docs/media/stairs-down.gif) |
 
-| <div align="center"> Isaac Lab </div> | <div align="center">  Mujoco </div> |  <div align="center"> Physical </div> |
-|--- | --- | --- |
-| [<img src="https://oss-global-cdn.unitree.com/static/d879adac250648c587d3681e90658b49_480x397.gif" width="240px">](g1_sim.gif) | [<img src="https://oss-global-cdn.unitree.com/static/3c88e045ab124c3ab9c761a99cb5e71f_480x397.gif" width="240px">](g1_mujoco.gif) | [<img src="https://oss-global-cdn.unitree.com/static/6c17c6cf52ec4e26bbfab1fbf591adb2_480x270.gif" width="240px">](g1_real.gif) |
+**Known limitation.** During ascent, one foot often leads and the other joins it on the same step. Experiments with foot-placement and contact-duration rewards, and left-right mirror training, did not yield reliable alternating stair ascent. Results are simulation-only; real-robot deployment has not been validated. See the [training notes (Chinese)](docs/training_experience.md).
 
-</div>
+## Policy and observations
+
+| Component | Inputs and role |
+| --- | --- |
+| CENet | Encodes five steps of proprioceptive history (480 dimensions) to estimate body linear velocity and a 16-dimensional latent context. |
+| Actor | Maps a 96-dimensional history slice, estimated velocity, and latent mean to 29 joint-position actions. Proprioceptive inputs include body angular velocity, projected gravity, velocity commands, joint positions and velocities, and previous actions. |
+| Critic | Uses one step of observations, including privileged simulated body linear velocity, height scan, and external force. Height scans also support some training rewards. |
+| PPO | Jointly optimizes the policy and CENet using velocity supervision, reconstruction, and KL regularization. Simulation runs at 5 ms per step with a control decimation of four (50 Hz policy). |
+
+**Checkpoint compatibility.** Isaac Lab flattens the history of each observation term separately before concatenation. The saved actor uses the last 96 elements of the resulting 480-dimensional vector; the decoder target uses the corresponding slice at the next control step. This slice spans multiple historical steps rather than representing a complete current frame as in DreamWaQ. The repository preserves this layout for checkpoint compatibility. The experimental mirror implementation assumes frame-major history; interpret the symmetry experiments with this limitation in mind.
 
 ## Installation
 
-- Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
-- Install the Unitree RL IsaacLab standalone environments.
+Use Linux, an NVIDIA GPU supported by Isaac Sim, Python 3.11, Isaac Sim 5.1, [Isaac Lab 2.3.2 at commit `d94504bcf`](https://github.com/isaac-sim/IsaacLab/commit/d94504bcf91cb7ab7ff956a2d48ecd1bca82797a), and RSL-RL 5.0.1. Isaac Lab is installed separately. See the [Isaac Lab installation guide](https://isaac-sim.github.io/IsaacLab/v2.3.2/source/setup/installation/index.html).
 
-  - Clone or copy this repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
-
-    ```bash
-    git clone https://github.com/unitreerobotics/unitree_rl_lab.git
-    ```
-  - Use a python interpreter that has Isaac Lab installed, install the library in editable mode using:
-
-    ```bash
-    conda activate env_isaaclab
-    ./unitree_rl_lab.sh -i
-    # restart your shell to activate the environment changes.
-    ```
-- Download unitree robot description files
-
-  *Method 1: Using USD Files*
-  - Download unitree usd files from [unitree_model](https://huggingface.co/datasets/unitreerobotics/unitree_model/tree/main), keeping folder structure
-    ```bash
-    git clone https://huggingface.co/datasets/unitreerobotics/unitree_model
-    ```
-  - Config `UNITREE_MODEL_DIR` in `source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py`.
-
-    ```bash
-    UNITREE_MODEL_DIR = "</home/user/projects/unitree_usd>"
-    ```
-
-  *Method 2: Using URDF Files [Recommended]* Only for Isaacsim >= 5.0
-  -  Download unitree robot urdf files from [unitree_ros](https://github.com/unitreerobotics/unitree_ros)
-      ```
-      git clone https://github.com/unitreerobotics/unitree_ros.git
-      ```
-  - Config `UNITREE_ROS_DIR` in `source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py`.
-    ```bash
-    UNITREE_ROS_DIR = "</home/user/projects/unitree_ros/unitree_ros>"
-    ```
-  - [Optional]: change *robot_cfg.spawn* if you want to use urdf files
-
-
-
-- Verify that the environments are correctly installed by:
-
-  - Listing the available tasks:
-
-    ```bash
-    ./unitree_rl_lab.sh -l # This is a faster version than isaaclab
-    ```
-  - Running a task:
-
-    ```bash
-    ./unitree_rl_lab.sh -t --task Unitree-G1-29dof-Velocity # support for autocomplete task-name
-    # same as
-    python scripts/rsl_rl/train.py --headless --task Unitree-G1-29dof-Velocity
-    ```
-  - Inference with a trained agent:
-
-    ```bash
-    ./unitree_rl_lab.sh -p --task Unitree-G1-29dof-Velocity # support for autocomplete task-name
-    # same as
-    python scripts/rsl_rl/play.py --task Unitree-G1-29dof-Velocity
-    ```
-
-## Deploy
-
-After the model training is completed, we need to perform sim2sim on the trained strategy in Mujoco to test the performance of the model.
-Then deploy sim2real.
-
-### Setup
+From the repository root, with `ISAAC_SIM_DIR` pointing to an installed Isaac Sim binary directory:
 
 ```bash
-# Install dependencies
-sudo apt install -y libyaml-cpp-dev libboost-all-dev libeigen3-dev libspdlog-dev libfmt-dev
-# Install unitree_sdk2
-git clone git@github.com:unitreerobotics/unitree_sdk2.git
-cd unitree_sdk2
-mkdir build && cd build
-cmake .. -DBUILD_EXAMPLES=OFF # Install on the /usr/local directory
-sudo make install
-# Compile the robot_controller
-cd unitree_rl_lab/deploy/robots/g1_29dof # or other robots
-mkdir build && cd build
-cmake .. && make
+git clone https://github.com/isaac-sim/IsaacLab.git ../IsaacLab
+git -C ../IsaacLab checkout d94504bcf91cb7ab7ff956a2d48ecd1bca82797a
+ln -s "$ISAAC_SIM_DIR" ../IsaacLab/_isaac_sim
+../IsaacLab/isaaclab.sh --conda humanoid-dreamwaq
+conda activate humanoid-dreamwaq
+../IsaacLab/isaaclab.sh --install rsl_rl
+python -m pip install -e .
 ```
 
-### Sim2Sim
+If a matching Isaac Lab environment already exists, activate it and install this package with `python -m pip install -e .`.
 
-Installing the [unitree_mujoco](https://github.com/unitreerobotics/unitree_mujoco?tab=readme-ov-file#installation).
-
-- Set the `robot` at `/simulate/config.yaml` to g1
-- Set `domain_id` to 0
-- Set `enable_elastic_hand` to 1
-- Set `use_joystck` to 1.
+Download the official G1 29-DoF USD and its sublayers. The default asset directory is `assets/unitree_model`; set `UNITREE_MODEL_DIR` to use an existing Unitree model directory instead. Scene materials and HDR sky assets use Isaac Lab / Isaac Sim online resources.
 
 ```bash
-# start simulation
-cd unitree_mujoco/simulate/build
-./unitree_mujoco
-# ./unitree_mujoco -i 0 -n eth0 -r g1 -s scene_29dof.xml # alternative
+python -m pip install huggingface_hub
+hf download unitreerobotics/unitree_model --repo-type dataset \
+  --include 'G1/29dof/usd/g1_29dof_rev_1_0/**' \
+  --local-dir assets/unitree_model
+python scripts/list_envs.py
 ```
+
+## Playback and training
+
+Play the included [CENet checkpoint](checkpoints/README.md) on mixed terrain. Terrain columns and initial robot positions depend on the configuration and random seed.
 
 ```bash
-cd unitree_rl_lab/deploy/robots/g1_29dof/build
-./g1_ctrl
-# 1. press [L2 + Up] to set the robot to stand up
-# 2. Click the mujoco window, and then press 8 to make the robot feet touch the ground.
-# 3. Press [R1 + X] to run the policy.
-# 4. Click the mujoco window, and then press 9 to disable the elastic band.
+python scripts/play.py --terrain complex --num_envs 32 \
+  --checkpoint checkpoints/g1_dreamwaq_82800.pt
 ```
 
-### Sim2Real
-
-You can use this program to control the robot directly, but make sure the on-borad control program has been closed.
+Train from scratch on flat and wave terrain, or resume an existing CENet checkpoint for easy-stair fine-tuning:
 
 ```bash
-./g1_ctrl --network eth0 # eth0 is the network interface name.
+python scripts/train.py --headless --terrain walk --num_envs 1024
+
+python scripts/train.py --headless --terrain stairs --num_envs 1024 \
+  --resume --checkpoint checkpoints/g1_dreamwaq_82800.pt
 ```
 
-## Acknowledgements
+Other terrain presets are `stairs-medium` (moderate stairs and waves), `complex` (mixed challenging terrain), and `stable` (reduced-difficulty mixed terrain). The default task is `Unitree-G1-29dof-Velocity-CE`. Use `--task` to select another task.
 
-This repository is built upon the support and contributions of the following open-source projects. Special thanks to:
+| Task ID | Purpose |
+| --- | --- |
+| `Unitree-G1-29dof-Velocity-CE` | Main blind locomotion task |
+| `Unitree-G1-29dof-Velocity` | Retained plain PPO entry point using the current proprioceptive actor observations |
+| `Unitree-G1-29dof-Velocity-CE-Sym` | Mirror loss and foot-placement experiments |
+| `Unitree-G1-29dof-Velocity-CE-Sym-Stairs` | Stair-only gait diagnostics |
 
-- [IsaacLab](https://github.com/isaac-sim/IsaacLab): The foundation for training and running codes.
-- [mujoco](https://github.com/google-deepmind/mujoco.git): Providing powerful simulation functionalities.
-- [robot_lab](https://github.com/fan-ziqi/robot_lab): Referenced for project structure and parts of the implementation.
-- [whole_body_tracking](https://github.com/HybridRobotics/whole_body_tracking): Versatile humanoid control framework for motion tracking.
+Training outputs are written to `logs/rsl_rl/`. For a short playback check, add `--headless --max-steps 24`; use `--video` to record a rollout. See the [deployment notes (Chinese)](docs/sim_to_real_deployment_guide.md) for real-robot interface constraints and remaining validation steps.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| [`src/humanoid_dreamwaq/locomotion/`](src/humanoid_dreamwaq/locomotion/) | Task registration, terrain and environment configuration, CENet, PPO, and reward functions |
+| [`src/humanoid_dreamwaq/assets/g1.py`](src/humanoid_dreamwaq/assets/g1.py) | G1 USD, joint, and actuator configuration |
+| [`scripts/`](scripts/) | Task listing, training, and playback |
+| [`checkpoints/`](checkpoints/) | Playback checkpoint and provenance |
+| [`docs/`](docs/) | Demo GIFs and historical project notes |
+
+## Credits and license
+
+Built on [Unitree RL Lab](https://github.com/unitreerobotics/unitree_rl_lab), [Isaac Lab](https://github.com/isaac-sim/IsaacLab), and [RSL-RL](https://github.com/leggedrobotics/rsl_rl). The method is inspired by Nahrendra, Yu, and Myung's [DreamWaQ paper](https://arxiv.org/abs/2301.10602). See [LICENSE](LICENSE) and the [Isaac Lab license](docs/licenses/isaaclab-license.txt) for source licensing and upstream notices. Robot assets are supplied by the [official Unitree asset repository](https://huggingface.co/datasets/unitreerobotics/unitree_model/tree/main/G1/29dof).
