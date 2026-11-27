@@ -62,8 +62,8 @@ python scripts/list_envs.py
 Play the included [CENet checkpoint](checkpoints/README.md) on mixed terrain. Terrain columns and initial robot positions depend on the configuration and random seed.
 
 ```bash
-python scripts/play.py --terrain complex --num_envs 32 \
-  --checkpoint checkpoints/g1_dreamwaq_82800.pt
+python scripts/play.py --terrain stable --num_envs 32 \
+  --checkpoint checkpoints/g1_dreamwaq_102000.pt
 ```
 
 Train from scratch on flat and wave terrain, or resume an existing CENet checkpoint for easy-stair fine-tuning:
@@ -72,7 +72,7 @@ Train from scratch on flat and wave terrain, or resume an existing CENet checkpo
 python scripts/train.py --headless --terrain walk --num_envs 1024
 
 python scripts/train.py --headless --terrain stairs --num_envs 1024 \
-  --resume --checkpoint checkpoints/g1_dreamwaq_82800.pt
+  --resume --checkpoint checkpoints/g1_dreamwaq_102000.pt
 ```
 
 Other terrain presets are `stairs-medium` (moderate stairs and waves), `complex` (mixed challenging terrain), and `stable` (reduced-difficulty mixed terrain). The default task is `Unitree-G1-29dof-Velocity-CE`. Use `--task` to select another task.

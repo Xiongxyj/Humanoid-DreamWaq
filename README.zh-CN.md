@@ -62,8 +62,8 @@ python scripts/list_envs.py
 使用附带的 [CENet checkpoint](checkpoints/README.md) 在混合地形上回放。窗口中的地形列和机器人起始位置由仿真配置和随机种子决定。
 
 ```bash
-python scripts/play.py --terrain complex --num_envs 32 \
-  --checkpoint checkpoints/g1_dreamwaq_82800.pt
+python scripts/play.py --terrain stable --num_envs 32 \
+  --checkpoint checkpoints/g1_dreamwaq_102000.pt
 ```
 
 从平地和波浪地形开始训练，或者从已有 CENet checkpoint 继续在简单楼梯微调。
@@ -72,7 +72,7 @@ python scripts/play.py --terrain complex --num_envs 32 \
 python scripts/train.py --headless --terrain walk --num_envs 1024
 
 python scripts/train.py --headless --terrain stairs --num_envs 1024 \
-  --resume --checkpoint checkpoints/g1_dreamwaq_82800.pt
+  --resume --checkpoint checkpoints/g1_dreamwaq_102000.pt
 ```
 
 `--terrain` 还支持 `stairs-medium`（中等台阶和波浪）、`complex`（复杂混合地形）和 `stable`（降低难度的混合地形）。默认任务是 `Unitree-G1-29dof-Velocity-CE`。以下任务可通过 `--task` 选择。

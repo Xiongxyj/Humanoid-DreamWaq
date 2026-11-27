@@ -9,7 +9,7 @@ logs/
 assets/unitree_model/
 checkpoints/*
 !checkpoints/README.md
-!checkpoints/g1_dreamwaq_82800.pt
+!checkpoints/g1_dreamwaq_102000.pt
 
 # Local reference copies and review artifacts.
 /.local/

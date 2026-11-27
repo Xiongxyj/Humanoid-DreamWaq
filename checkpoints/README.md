@@ -1,13 +1,15 @@
-# 回放权重
+# Playback checkpoint / 回放权重
 
-| 文件 | 迭代 | 来源 |
+| File | Iteration | Source |
 | --- | ---: | --- |
-| `g1_dreamwaq_82800.pt` | 82,800 | 本地 `2026-06-04_00-12-55` 训练目录的起始保存。该 run 的 `agent.yaml` 记录从 `2026-06-03_10-11-29/model_82800.pt` 恢复，原始路径也出现在录屏日期附近的回放命令中。 |
+| `g1_dreamwaq_102000.pt` | 102,000 | `2026-06-04_00-12-55/model_102000.pt`, Phase D deployment-stability fine-tuning |
 
-SHA-256：`bc6b61a8e3a69da5a320c89dbd38ae1a98ff17970a68a04ad0508b571fb38a62`
+SHA-256: `859ce44d5331c99ed61dd67bcfdd8004a0e8e7116a963610c50ab02be7f6e132`
 
-这里保留的是与录屏最接近且可追溯的本地版本。录屏画面没有显示 checkpoint 路径或散列值，因此无法确认与录屏所用文件逐字节一致。此文件包含 Actor、Critic 和优化器状态，可用于当前 CENet 任务回放与续训。从仓库根目录运行：
+This checkpoint uses the historical CENet observation layout implemented in the released code. Playback on the stable terrain preset was verified by the project author. It is a later checkpoint than the June 3 demonstration recording, not a byte-identical copy of the recording's weights. It includes the actor, critic and optimizer states. No real-robot validation is claimed.
+
+该权重来自 6 月 4 日 Phase D 稳定性微调阶段，沿用本仓库已发布的历史 CENet 观测布局。项目作者已确认 stable 地形回放正常。它并非 6 月 3 日录屏原始权重。包含 Actor、Critic 和优化器状态；尚未完成真机验证。
 
 ```bash
-python scripts/play.py --terrain complex --checkpoint checkpoints/g1_dreamwaq_82800.pt
+python scripts/play.py --terrain stable --checkpoint checkpoints/g1_dreamwaq_102000.pt
 ```
